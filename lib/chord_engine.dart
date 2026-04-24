@@ -176,8 +176,7 @@ List<int?>? _expandCommaTabField(String raw) {
   if (all.length != 6) {
     return (
       frets: [],
-      error: 'Need 6 strings (low → high); got ${all.length} entries. '
-          'Tip: use commas only where needed, e.g. 11,00000 or 11,0,0,0,0,0.',
+      error: 'Need 6 strings (low → high); got ${all.length} entries. ',
     );
   }
   for (var i = 0; i < 6; i++) {
