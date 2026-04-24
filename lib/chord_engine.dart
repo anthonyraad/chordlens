@@ -117,34 +117,89 @@ TuningPreset? presetById(String id) {
 /// Maximum fret when using comma-separated or multi-digit values.
 const int kMaxFret = 30;
 
-String? validateTabString(String? input) {
-  if (input == null) return null;
-  final s = input.trim();
-  if (s.isEmpty) return null;
-  if (s.contains(',')) {
-    final parts = s.split(',').map((e) => e.trim()).toList();
-    if (parts.length != 6) {
-      return 'Use 6 comma-separated values (low → high)';
-    }
-    for (var i = 0; i < 6; i++) {
-      final p = parts[i].toLowerCase();
-      if (p.isEmpty) {
-        return 'String ${i + 1}: empty (use x or a fret number).';
-      }
-      if (p == 'x') continue;
-      if (!RegExp(r'^\d+$').hasMatch(p)) {
-        return 'String ${i + 1}: use a number or x (muted).';
-      }
-      final v = int.parse(p);
-      if (v < 0 || v > kMaxFret) {
-        return 'String ${i + 1}: fret 0–$kMaxFret.';
-      }
-    }
+/// One comma-separated field → frets (null = muted). Digits only: greedy
+/// two-digit frets in [10, kMaxFret]; otherwise one digit per character.
+/// `x` is one muted string per character.
+List<int?>? _expandCommaTabField(String raw) {
+  final seg = raw.trim().toLowerCase().replaceAll('X', 'x');
+  if (seg.isEmpty) {
     return null;
   }
+  final out = <int?>[];
+  var i = 0;
+  while (i < seg.length) {
+    final c = seg.codeUnitAt(i);
+    if (c == 0x78) {
+      // x
+      out.add(null);
+      i++;
+      continue;
+    }
+    if (c < 0x30 || c > 0x39) {
+      return null;
+    }
+    if (i + 1 < seg.length) {
+      final c2 = seg.codeUnitAt(i + 1);
+      if (c2 >= 0x30 && c2 <= 0x39) {
+        final two = (c - 0x30) * 10 + (c2 - 0x30);
+        if (two >= 10 && two <= kMaxFret) {
+          out.add(two);
+          i += 2;
+          continue;
+        }
+      }
+    }
+    out.add(c - 0x30);
+    i++;
+  }
+  return out;
+}
+
+/// Parses tab that contains a comma: fields split on `,`, each field expands
+/// to 1+ string frets; total must be 6 (low → high).
+({List<int?> frets, String? error}) _parseFlexibleCommaTab(String s) {
+  final parts = s.split(',').map((e) => e.trim()).toList();
+  if (parts.any((p) => p.isEmpty)) {
+    return (frets: [], error: 'Remove empty slots between commas.');
+  }
+  final all = <int?>[];
+  for (var pi = 0; pi < parts.length; pi++) {
+    final expanded = _expandCommaTabField(parts[pi]);
+    if (expanded == null) {
+      return (
+        frets: [],
+        error: 'Field ${pi + 1}: use digits 0–9 or x (muted) only.',
+      );
+    }
+    all.addAll(expanded);
+  }
+  if (all.length != 6) {
+    return (
+      frets: [],
+      error: 'Need 6 strings (low → high); got ${all.length} entries. '
+          'Tip: use commas only where needed, e.g. 11,00000 or 11,0,0,0,0,0.',
+    );
+  }
+  for (var i = 0; i < 6; i++) {
+    final f = all[i];
+    if (f != null && (f < 0 || f > kMaxFret)) {
+      return (frets: [], error: 'String ${i + 1}: fret 0–$kMaxFret.');
+    }
+  }
+  return (frets: all, error: null);
+}
+
+String? validateTabString(String? input) {
+  if (input == null) return null;
+  final s = input.trim().replaceAll('X', 'x');
+  if (s.isEmpty) return null;
+  if (s.contains(',')) {
+    final r = _parseFlexibleCommaTab(s);
+    return r.error;
+  }
   if (s.length != 6) {
-    return 'Without commas, use exactly 6 characters (0–9 or x). '
-        'Use commas for 10+';
+    return 'Use exactly 6 characters (0–9 or x). '
+        'Use commas to parse double-digit frets.';
   }
   final t = s.toLowerCase();
   for (var i = 0; i < 6; i++) {
@@ -159,12 +214,11 @@ String? validateTabString(String? input) {
 
 List<int?> _fretsFromNormalizedTab(String t) {
   if (t.contains(',')) {
-    final parts = t.split(',').map((e) => e.trim()).toList();
-    return List<int?>.generate(6, (i) {
-      final p = parts[i].toLowerCase();
-      if (p == 'x') return null;
-      return int.parse(p);
-    });
+    final r = _parseFlexibleCommaTab(t);
+    if (r.error != null) {
+      throw ArgumentError(r.error);
+    }
+    return r.frets;
   }
   if (t.length != 6) {
     throw ArgumentError('Legacy tab must be 6 characters, got ${t.length}.');

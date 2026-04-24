@@ -1,23 +1,16 @@
 import 'dart:async' show unawaited;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:super_clipboard/super_clipboard.dart';
 
 import 'chord_engine.dart';
 import 'midi_export.dart';
 import 'piano_keyboard.dart';
 import 'rainbow_ui.dart';
 import 'terminal_ui.dart';
-
-/// `public.midi` / common MIMEs for DAWs that read MIDI from the clipboard.
-const SimpleFileFormat _kClipboardSmf = SimpleFileFormat(
-  uniformTypeIdentifiers: ['public.midi'],
-  mimeTypes: ['audio/midi', 'application/x-midi', 'audio/x-midi'],
-);
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -219,48 +212,70 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     });
   }
 
-  Future<void> _copyPianoMapMidi(BuildContext context) async {
+  /// Safe base name for export (no path separators or illegal filename chars).
+  String _sanitizeMidiBaseName(String raw) {
+    var s = raw.trim();
+    if (s.isEmpty) {
+      return 'chord_lens_voicing';
+    }
+    s = s.replaceAll(RegExp(r'[<>:"/\\|?*\x00-\x1f]'), '_');
+    s = s.replaceAll(RegExp(r'\s+'), '_');
+    if (s.isEmpty || s == '.' || s == '..') {
+      return 'chord_lens_voicing';
+    }
+    return s.length > 80 ? s.substring(0, 80) : s;
+  }
+
+  String _midiExportBaseName() {
+    if (_interpretations.isNotEmpty) {
+      return _sanitizeMidiBaseName(_interpretations.first.displayName);
+    }
+    final t = _tabController.text.trim().replaceAll(RegExp(r'[^0-9,xX]'), '');
+    if (t.isNotEmpty) {
+      return _sanitizeMidiBaseName('tab_$t');
+    }
+    return 'chord_lens_voicing';
+  }
+
+  Future<void> _exportChordMidi(BuildContext context) async {
     if (_notes.isEmpty) return;
     final midis = _notes.map((e) => e.midi).toList();
-    final preview = midis.join(' ');
-    var wroteSmf = false;
     final bytes = buildChordSmf0(midis);
-
-    final system = SystemClipboard.instance;
-    if (system != null) {
-      try {
-        final item = DataWriterItem(
-          suggestedName: 'chordlens_voicing.mid',
-        );
-        // Android: include plain text alongside file bytes (super_clipboard).
-        item.add(Formats.plainText(preview));
-        item.add(_kClipboardSmf(bytes));
-        await system.write([item]);
-        wroteSmf = true;
-      } on Object {
-        // Fall back to text below.
-      }
-    }
-    if (!wroteSmf) {
-      await Clipboard.setData(ClipboardData(text: preview));
-    }
-    if (!context.mounted) return;
-    final msg = wroteSmf
-        ? 'Copied voicing as a .mid on the clipboard — paste in your DAW (also: $preview)'
-        : (kIsWeb
-            ? 'Copied MIDI numbers only ($preview). Browsers often cannot put a .mid on the clipboard — use the desktop app for full DAW paste.'
-            : 'Copied MIDI numbers only ($preview). DAWs may still accept text; a .mid file on the clipboard was unavailable.');
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          msg,
-          style: GoogleFonts.jetBrainsMono(fontSize: 12),
+    final base = _midiExportBaseName();
+    try {
+      await FileSaver.instance.saveFile(
+        name: base,
+        bytes: bytes,
+        fileExtension: 'midi',
+        mimeType: MimeType.custom,
+        customMimeType: 'audio/midi',
+      );
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Exported $base.midi — import or drag into your DAW',
+            style: GoogleFonts.jetBrainsMono(fontSize: 12),
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: TerminalColors.panel,
         ),
-        duration: const Duration(seconds: 3),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: TerminalColors.panel,
-      ),
-    );
+      );
+    } on Object catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Export failed: $e',
+            style: GoogleFonts.jetBrainsMono(fontSize: 12),
+          ),
+          duration: const Duration(seconds: 3),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: TerminalColors.panel,
+        ),
+      );
+    }
   }
 
   /// Chord name for a slot from its stored tab and current tuning (no side effects).
@@ -405,7 +420,7 @@ class _ChordLensHomeState extends State<ChordLensHome> {
                                 ),
                                 if (_notes.isNotEmpty && _interpretations.isNotEmpty)
                                   TextButton(
-                                    onPressed: () => _copyPianoMapMidi(context),
+                                    onPressed: () => _exportChordMidi(context),
                                     style: TextButton.styleFrom(
                                       foregroundColor: r4.textDim,
                                       padding: const EdgeInsets.symmetric(
@@ -416,7 +431,7 @@ class _ChordLensHomeState extends State<ChordLensHome> {
                                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                                     ),
                                     child: Text(
-                                      '(copy)',
+                                      '(export)',
                                       style: GoogleFonts.jetBrainsMono(
                                         fontSize: 12,
                                         color: r4.textBright,

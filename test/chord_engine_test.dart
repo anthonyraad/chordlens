@@ -9,11 +9,15 @@ void main() {
     });
     test('accepts comma-separated frets', () {
       expect(validateTabString('11,0,0,0,0,0'), isNull);
+      expect(validateTabString('11,00000'), isNull);
+      expect(validateTabString('10,00000'), isNull);
+      expect(validateTabString('x,00000'), isNull);
       expect(validateTabString('x,3,2,0,1,0'), isNull);
       expect(validateTabString('11, 0, 0, 0, 0, 0'), isNull);
     });
     test('rejects bad comma or legacy length', () {
       expect(validateTabString('11,0,0,0,0'), isNotNull);
+      expect(validateTabString('11,0,00000'), isNotNull);
       expect(validateTabString('x3201'), isNotNull);
       expect(validateTabString('x32010a'), isNotNull);
       expect(validateTabString('110000000000'), isNotNull);
@@ -55,6 +59,17 @@ void main() {
       for (var i = 1; i < 6; i++) {
         expect(notes[i].fret, 0);
         expect(notes[i].stringIndex, i);
+      }
+    });
+    test('fret 11 with packed zeros after one comma', () {
+      final open = kTuningPresets.first.openStringMidis;
+      final a = tabToNotes('11,0,0,0,0,0', open);
+      final b = tabToNotes('11,00000', open);
+      expect(b.length, a.length);
+      for (var i = 0; i < a.length; i++) {
+        expect(b[i].midi, a[i].midi);
+        expect(b[i].stringIndex, a[i].stringIndex);
+        expect(b[i].fret, a[i].fret);
       }
     });
   });
