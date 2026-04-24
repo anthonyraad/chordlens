@@ -114,21 +114,67 @@ TuningPreset? presetById(String id) {
 
 // --- Tab validation ---
 
+/// Maximum fret when using comma-separated or multi-digit values.
+const int kMaxFret = 30;
+
 String? validateTabString(String? input) {
   if (input == null) return null;
   final s = input.trim();
   if (s.isEmpty) return null;
-  if (s.length != 6) {
-    return 'Use exactly 6 characters (0–9 or x, low → high).';
+  if (s.contains(',')) {
+    final parts = s.split(',').map((e) => e.trim()).toList();
+    if (parts.length != 6) {
+      return 'Use 6 comma-separated values (low → high)';
+    }
+    for (var i = 0; i < 6; i++) {
+      final p = parts[i].toLowerCase();
+      if (p.isEmpty) {
+        return 'String ${i + 1}: empty (use x or a fret number).';
+      }
+      if (p == 'x') continue;
+      if (!RegExp(r'^\d+$').hasMatch(p)) {
+        return 'String ${i + 1}: use a number or x (muted).';
+      }
+      final v = int.parse(p);
+      if (v < 0 || v > kMaxFret) {
+        return 'String ${i + 1}: fret 0–$kMaxFret.';
+      }
+    }
+    return null;
   }
+  if (s.length != 6) {
+    return 'Without commas, use exactly 6 characters (0–9 or x). '
+        'Use commas for 10+';
+  }
+  final t = s.toLowerCase();
   for (var i = 0; i < 6; i++) {
-    final c = s[i].toLowerCase();
+    final c = t[i];
     if (c == 'x') continue;
     if (c.codeUnitAt(0) < 0x30 || c.codeUnitAt(0) > 0x39) {
       return 'String ${i + 1}: use a digit 0–9 or x (muted).';
     }
   }
   return null;
+}
+
+List<int?> _fretsFromNormalizedTab(String t) {
+  if (t.contains(',')) {
+    final parts = t.split(',').map((e) => e.trim()).toList();
+    return List<int?>.generate(6, (i) {
+      final p = parts[i].toLowerCase();
+      if (p == 'x') return null;
+      return int.parse(p);
+    });
+  }
+  if (t.length != 6) {
+    throw ArgumentError('Legacy tab must be 6 characters, got ${t.length}.');
+  }
+  final lo = t.toLowerCase();
+  return List<int?>.generate(6, (i) {
+    final c = lo[i];
+    if (c == 'x') return null;
+    return c.codeUnitAt(0) - 0x30;
+  });
 }
 
 // --- Notes from tab ---
@@ -145,11 +191,13 @@ List<PluckedNote> tabToNotes(String tab, List<int> openStringMidis) {
   if (openStringMidis.length != 6) {
     throw ArgumentError('Tuning must have 6 open-string MIDI values.');
   }
+  final raw = tab.trim().replaceAll('X', 'x');
+  final t = raw.contains(',') ? raw : raw.toLowerCase();
+  final frets = _fretsFromNormalizedTab(t);
   final out = <PluckedNote>[];
   for (var s = 0; s < 6; s++) {
-    final ch = tab[s];
-    if (ch.toLowerCase() == 'x') continue;
-    final f = int.parse(ch);
+    final f = frets[s];
+    if (f == null) continue;
     out.add(PluckedNote(openStringMidis[s] + f, s, f));
   }
   return out;

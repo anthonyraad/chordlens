@@ -7,9 +7,16 @@ void main() {
       expect(validateTabString('x32010'), isNull);
       expect(validateTabString('320033'), isNull);
     });
-    test('rejects bad length and chars', () {
+    test('accepts comma-separated frets', () {
+      expect(validateTabString('11,0,0,0,0,0'), isNull);
+      expect(validateTabString('x,3,2,0,1,0'), isNull);
+      expect(validateTabString('11, 0, 0, 0, 0, 0'), isNull);
+    });
+    test('rejects bad comma or legacy length', () {
+      expect(validateTabString('11,0,0,0,0'), isNotNull);
       expect(validateTabString('x3201'), isNotNull);
       expect(validateTabString('x32010a'), isNotNull);
+      expect(validateTabString('110000000000'), isNotNull);
     });
     test('empty or whitespace is no error (prompt only)', () {
       expect(validateTabString(''), isNull);
@@ -26,6 +33,29 @@ void main() {
       expect(pcs, {0, 4, 7});
       final names = identifyChords(notes);
       expect(names.first.displayName, 'C');
+    });
+    test('comma form matches 6-char C voicing', () {
+      final open = kTuningPresets.first.openStringMidis;
+      final a = tabToNotes('x32010', open);
+      final b = tabToNotes('x,3,2,0,1,0', open);
+      expect(a.length, b.length);
+      for (var i = 0; i < a.length; i++) {
+        expect(a[i].midi, b[i].midi);
+        expect(a[i].stringIndex, b[i].stringIndex);
+        expect(a[i].fret, b[i].fret);
+      }
+    });
+  });
+
+  group('double-digit frets', () {
+    test('fret 11 on low E, other strings open (comma form)', () {
+      final open = kTuningPresets.first.openStringMidis;
+      final notes = tabToNotes('11,0,0,0,0,0', open);
+      expect(notes[0].fret, 11);
+      for (var i = 1; i < 6; i++) {
+        expect(notes[i].fret, 0);
+        expect(notes[i].stringIndex, i);
+      }
     });
   });
 
