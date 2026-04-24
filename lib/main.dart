@@ -62,6 +62,37 @@ class _ChordLensHomeState extends State<ChordLensHome> {
   List<ChordInterpretation> _interpretations = [];
   (int, int) _pianoRange = (2, 4);
 
+  /// Capo-style transposition: sounding pitch +n semitones (0–11).
+  int _capoSemitones = 0;
+
+  List<PluckedNote> _transposedPluckedNotes(
+    List<PluckedNote> base,
+    int semis,
+  ) {
+    if (semis == 0) {
+      return base;
+    }
+    return [
+      for (final n in base)
+        PluckedNote(n.midi + semis, n.stringIndex, n.fret),
+    ];
+  }
+
+  void _onTuningRowHorizontalDragEnd(DragEndDetails details) {
+    final v = details.primaryVelocity;
+    if (v == null) {
+      return;
+    }
+    const threshold = 280.0;
+    if (v > threshold && _capoSemitones < 11) {
+      _capoSemitones++;
+      _recompute();
+    } else if (v < -threshold && _capoSemitones > 0) {
+      _capoSemitones--;
+      _recompute();
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -192,10 +223,11 @@ class _ChordLensHomeState extends State<ChordLensHome> {
           _tuningError = 'Need 6 string pitches.';
           return;
         }
-        _notes = tabToNotes(
+        final baseNotes = tabToNotes(
           _tabController.text.trim().toLowerCase().replaceAll('X', 'x'),
           open,
         );
+        _notes = _transposedPluckedNotes(baseNotes, _capoSemitones);
         if (_notes.isEmpty) {
           _interpretations = [];
         } else {
@@ -304,7 +336,8 @@ class _ChordLensHomeState extends State<ChordLensHome> {
       if (notes.isEmpty) {
         return null;
       }
-      final interp = identifyChords(notes);
+      final heard = _transposedPluckedNotes(notes, _capoSemitones);
+      final interp = identifyChords(heard);
       if (interp.isEmpty) {
         return null;
       }
@@ -370,14 +403,7 @@ class _ChordLensHomeState extends State<ChordLensHome> {
                     children: [
                       RainbowPanel(
                         band: 1,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('> TUNING', style: r1.sectionLabel()),
-                            const SizedBox(height: 8),
-                            _tuningBlock(context, r1),
-                          ],
-                        ),
+                        child: _tuningBlock(context, r1),
                       ),
                       RainbowPanel(
                         band: 2,
@@ -608,43 +634,70 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-          decoration: BoxDecoration(
-            color: r.blockBg,
-            border: Border.all(
-              color: r.border,
-            ),
-            borderRadius: BorderRadius.zero,
-          ),
-          child: DropdownButtonHideUnderline(
-            child: DropdownButton<String>(
-              value: _presetId,
-              isExpanded: true,
-              icon: Icon(
-                Icons.arrow_drop_down,
-                color: r.textBright,
+        GestureDetector(
+          onHorizontalDragEnd: _onTuningRowHorizontalDragEnd,
+          behavior: HitTestBehavior.opaque,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  Text('> TUNING', style: r.sectionLabel()),
+                  if (_capoSemitones > 0) ...[
+                    const Spacer(),
+                    Text(
+                      '+$_capoSemitones',
+                      style: GoogleFonts.jetBrainsMono(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: r.textBright,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              itemHeight: 48,
-              dropdownColor: r.blockBg,
-              style: GoogleFonts.jetBrainsMono(
-                color: r.text,
-                fontSize: 12,
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
+                decoration: BoxDecoration(
+                  color: r.blockBg,
+                  border: Border.all(
+                    color: r.border,
+                  ),
+                  borderRadius: BorderRadius.zero,
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _presetId,
+                    isExpanded: true,
+                    icon: Icon(
+                      Icons.arrow_drop_down,
+                      color: r.textBright,
+                    ),
+                    itemHeight: 48,
+                    dropdownColor: r.blockBg,
+                    style: GoogleFonts.jetBrainsMono(
+                      color: r.text,
+                      fontSize: 12,
+                    ),
+                    items: items,
+                    onChanged: (v) {
+                      if (v == null) return;
+                      setState(() {
+                        _presetId = v;
+                        if (v != _customId) {
+                          _applyPresetStrings(presetById(v)!.openStringMidis);
+                          _customTuningError = null;
+                        }
+                        _recompute();
+                      });
+                      unawaited(_saveTuningPrefs());
+                    },
+                  ),
+                ),
               ),
-              items: items,
-              onChanged: (v) {
-                if (v == null) return;
-                setState(() {
-                  _presetId = v;
-                  if (v != _customId) {
-                    _applyPresetStrings(presetById(v)!.openStringMidis);
-                    _customTuningError = null;
-                  }
-                  _recompute();
-                });
-                unawaited(_saveTuningPrefs());
-              },
-            ),
+            ],
           ),
         ),
         if (_presetId == _customId) ...[
