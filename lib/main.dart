@@ -3,14 +3,13 @@ import 'dart:async' show unawaited;
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'chord_engine.dart';
 import 'midi_export.dart';
 import 'piano_keyboard.dart';
-import 'rainbow_ui.dart';
-import 'terminal_ui.dart';
+import 'section_card.dart';
+import 'theme.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -25,7 +24,9 @@ class ChordLensApp extends StatelessWidget {
     return MaterialApp(
       title: 'ChordLens',
       debugShowCheckedModeBanner: false,
-      theme: TerminalTheme.data(),
+      theme: ChordLensTheme.light(),
+      darkTheme: ChordLensTheme.dark(),
+      themeMode: ThemeMode.system,
       home: const ChordLensHome(),
     );
   }
@@ -65,16 +66,12 @@ class _ChordLensHomeState extends State<ChordLensHome> {
   /// Capo-style transposition: sounding pitch +n semitones (0–11).
   int _capoSemitones = 0;
 
-  List<PluckedNote> _transposedPluckedNotes(
-    List<PluckedNote> base,
-    int semis,
-  ) {
+  List<PluckedNote> _transposedPluckedNotes(List<PluckedNote> base, int semis) {
     if (semis == 0) {
       return base;
     }
     return [
-      for (final n in base)
-        PluckedNote(n.midi + semis, n.stringIndex, n.fret),
+      for (final n in base) PluckedNote(n.midi + semis, n.stringIndex, n.fret),
     ];
   }
 
@@ -117,8 +114,9 @@ class _ChordLensHomeState extends State<ChordLensHome> {
         for (var i = 0; i < 6; i++) {
           _customTuning[i].text =
               prefs.getString('$_kPrefTuningCustomPrefix$i') ??
-                  kPitchClassNames[
-                      pitchClassFromMidi(kTuningPresets[0].openStringMidis[i])];
+              kPitchClassNames[pitchClassFromMidi(
+                kTuningPresets[0].openStringMidis[i],
+              )];
         }
       });
       _recompute();
@@ -232,9 +230,7 @@ class _ChordLensHomeState extends State<ChordLensHome> {
           _interpretations = [];
         } else {
           _interpretations = identifyChords(_notes);
-          _pianoRange = pianoOctaveRange(
-            pianoChordHighlightMidis(_notes),
-          );
+          _pianoRange = pianoOctaveRange(pianoChordHighlightMidis(_notes));
         }
       } catch (e) {
         _tuningError = e.toString();
@@ -285,26 +281,16 @@ class _ChordLensHomeState extends State<ChordLensHome> {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Exported $base.midi — import or drag into your DAW',
-            style: GoogleFonts.jetBrainsMono(fontSize: 12),
-          ),
+          content: Text('Exported $base.midi — import or drag into your DAW'),
           duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: TerminalColors.panel,
         ),
       );
     } on Object catch (e) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(
-            'Export failed: $e',
-            style: GoogleFonts.jetBrainsMono(fontSize: 12),
-          ),
+          content: Text('Export failed: $e'),
           duration: const Duration(seconds: 3),
-          behavior: SnackBarBehavior.floating,
-          backgroundColor: TerminalColors.panel,
         ),
       );
     }
@@ -357,9 +343,7 @@ class _ChordLensHomeState extends State<ChordLensHome> {
       _activeSlot = i;
       _tabController.value = TextEditingValue(
         text: _slotTabTexts[i],
-        selection: TextSelection.collapsed(
-          offset: _slotTabTexts[i].length,
-        ),
+        selection: TextSelection.collapsed(offset: _slotTabTexts[i].length),
       );
     });
     _tabController.addListener(_recompute);
@@ -368,185 +352,118 @@ class _ChordLensHomeState extends State<ChordLensHome> {
 
   @override
   Widget build(BuildContext context) {
-    final rBar = RainbowStyle.band(0);
-    final r1 = RainbowStyle.band(1);
-    final r2 = RainbowStyle.band(2);
-    final r3 = RainbowStyle.band(3);
-    final r4 = RainbowStyle.band(4);
-    final rSlots = RainbowStyle.band(5);
+    final scheme = Theme.of(context).colorScheme;
+    final muted = Theme.of(
+      context,
+    ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant);
     return Scaffold(
-      backgroundColor: TerminalColors.bg,
-      appBar: AppBar(
-        backgroundColor: rBar.blockBg,
-        title: CrtText(
-          text: r'> CHORDLENS.EXE',
-          glowColor: rBar.titleGlow,
-          style: GoogleFonts.jetBrainsMono(
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-            color: rBar.textBright,
-          ),
-        ),
-        iconTheme: IconThemeData(color: rBar.text),
-      ),
+      appBar: AppBar(title: const Text('ChordLens')),
       body: SafeArea(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 640),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      RainbowPanel(
-                        band: 1,
-                        child: _tuningBlock(context, r1),
-                      ),
-                      RainbowPanel(
-                        band: 2,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              r'> TAB  (6 char, L→H)',
-                              style: r2.sectionLabel(),
-                            ),
-                            const SizedBox(height: 8),
-                            _tabField(r2),
-                          ],
+                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+                child: Align(
+                  alignment: Alignment.topCenter,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 640),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        SectionCard(
+                          title: 'Tuning',
+                          trailing: _capoSemitones > 0
+                              ? Text(
+                                  '+$_capoSemitones',
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        color: scheme.primary,
+                                      ),
+                                )
+                              : null,
+                          child: _tuningBlock(context),
                         ),
-                      ),
-                      RainbowPanel(
-                        band: 3,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text('> CHORD_ID', style: r3.sectionLabel()),
-                            const SizedBox(height: 8),
-                            _chordNameBlock(r3),
-                          ],
-                        ),
-                      ),
-                      RainbowPanel(
-                        band: 4,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    '> PIANO_MAP',
-                                    style: r4.sectionLabel(),
-                                  ),
-                                ),
-                                if (_notes.isNotEmpty && _interpretations.isNotEmpty)
-                                  TextButton(
-                                    onPressed: () => _exportChordMidi(context),
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: r4.textDim,
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 6,
-                                        vertical: 0,
-                                      ),
-                                      minimumSize: Size.zero,
-                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                                    ),
-                                    child: Text(
-                                      '(export)',
-                                      style: GoogleFonts.jetBrainsMono(
-                                        fontSize: 12,
-                                        color: r4.textBright,
-                                        decoration: TextDecoration.underline,
-                                        decorationColor: r4.textDim,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            const SizedBox(height: 12),
-                            if (_notes.isEmpty)
-                              Text(
-                                _tabController.text.isEmpty
-                                    ? r'[ ] Awaiting input...  _'
-                                    : r'[ ] No open strings, or run diagnostics above.',
-                                style: GoogleFonts.jetBrainsMono(
-                                  color: r4.textDim,
-                                  fontSize: 13,
-                                ),
-                              )
-                            else
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text.rich(
-                                    TextSpan(
-                                      style: GoogleFonts.jetBrainsMono(
-                                        fontSize: 12,
-                                        color: r4.text,
-                                      ),
-                                      children: [
-                                        const TextSpan(text: 'Notes: '),
-                                        TextSpan(
-                                          text: _notes
-                                              .map(
-                                                (e) => noteNameWithOctave(e.midi),
-                                              )
-                                              .join('  '),
-                                          style: GoogleFonts.jetBrainsMono(
-                                            fontSize: 12,
-                                            color: r4.textBright,
-                                            fontWeight: FontWeight.w600,
+                        SectionCard(title: 'Tab', child: _tabField()),
+                        SectionCard(title: 'Chord', child: _chordNameBlock()),
+                        SectionCard(
+                          title: 'Piano',
+                          trailing:
+                              _notes.isNotEmpty && _interpretations.isNotEmpty
+                              ? TextButton(
+                                  onPressed: () => _exportChordMidi(context),
+                                  child: const Text('Export'),
+                                )
+                              : null,
+                          child: _notes.isEmpty
+                              ? Text(
+                                  _tabController.text.isEmpty
+                                      ? 'Waiting for a tab.'
+                                      : 'No sounding notes for this tab.',
+                                  style: muted,
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text.rich(
+                                      TextSpan(
+                                        style: muted,
+                                        children: [
+                                          const TextSpan(text: 'Notes  '),
+                                          TextSpan(
+                                            text: _notes
+                                                .map(
+                                                  (e) => noteNameWithOctave(
+                                                    e.midi,
+                                                  ),
+                                                )
+                                                .join('  '),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: scheme.onSurface,
+                                                  fontWeight: FontWeight.w600,
+                                                ),
                                           ),
-                                        ),
-                                      ],
+                                        ],
+                                      ),
                                     ),
-                                  ),
-                                  const SizedBox(height: 12),
-                                  LayoutBuilder(
-                                    builder: (context, c) {
-                                      final o = _pianoRange;
-                                      final minM = midiFor(o.$1, 0);
-                                      final maxM = midiFor(o.$2, 11);
-                                      final set = pianoChordHighlightMidis(
-                                        _notes,
-                                      );
-                                      final root = _interpretations.isEmpty
-                                          ? null
-                                          : _interpretations.first
-                                              .rootPitchClass;
-                                      return PianoKeyboard(
-                                        minMidi: minM,
-                                        maxMidi: maxM,
-                                        chordMidis: set,
-                                        rootPitchClass: root,
-                                        accent: r4,
-                                        focusMidi: _notes.isNotEmpty
-                                            ? _notes.first.midi
-                                            : null,
-                                      );
-                                    },
-                                  ),
-                                ],
-                              ),
-                          ],
+                                    const SizedBox(height: 12),
+                                    LayoutBuilder(
+                                      builder: (context, c) {
+                                        final o = _pianoRange;
+                                        final minM = midiFor(o.$1, 0);
+                                        final maxM = midiFor(o.$2, 11);
+                                        final set = pianoChordHighlightMidis(
+                                          _notes,
+                                        );
+                                        final root = _interpretations.isEmpty
+                                            ? null
+                                            : _interpretations
+                                                  .first
+                                                  .rootPitchClass;
+                                        return PianoKeyboard(
+                                          minMidi: minM,
+                                          maxMidi: maxM,
+                                          chordMidis: set,
+                                          rootPitchClass: root,
+                                          focusMidi: _notes.isNotEmpty
+                                              ? _notes.first.midi
+                                              : null,
+                                        );
+                                      },
+                                    ),
+                                  ],
+                                ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                    ],
+                        _chordSessionSlotsBar(),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 640),
-                child: _chordSessionSlotsBar(rSlots),
               ),
             ),
           ],
@@ -555,39 +472,35 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     );
   }
 
-  Widget _tabField(RainbowStyle r) {
+  Widget _tabField() {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        Text(
+          'Six frets, low string to high. Example: x32010',
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        const SizedBox(height: 8),
         TextField(
           controller: _tabController,
           maxLength: 40,
-          style: GoogleFonts.jetBrainsMono(
-            fontSize: 20,
-            letterSpacing: 2,
-            color: r.textBright,
+          style: TextStyle(
+            fontFamily: ChordLensTheme.fontFamily,
+            fontSize: 22,
+            letterSpacing: 1.5,
+            color: scheme.onSurface,
           ),
-          cursorColor: r.borderFocus,
+          cursorColor: scheme.primary,
           cursorWidth: 2,
-          decoration: r.inputFieldDecoration(
-            hint: 'x32010',
-            hintStyle: GoogleFonts.jetBrainsMono(
-              color: r.hint,
-              fontSize: 20,
-              letterSpacing: 2,
-            ),
-          ).copyWith(
-            isDense: true,
+          decoration: const InputDecoration(
+            hintText: 'x32010',
             counterText: '',
-            contentPadding: const EdgeInsets.symmetric(
-              horizontal: 10,
-              vertical: 10,
-            ),
           ),
           inputFormatters: [
-            FilteringTextInputFormatter.allow(
-              RegExp(r'[0-9xX,\s]'),
-            ),
+            FilteringTextInputFormatter.allow(RegExp(r'[0-9xX,\s]')),
             LengthLimitingTextInputFormatter(40),
           ],
           onChanged: (_) => _recompute(),
@@ -595,10 +508,11 @@ class _ChordLensHomeState extends State<ChordLensHome> {
         if (_tabError != null) ...[
           const SizedBox(height: 6),
           Text(
-            '[ERR] $_tabError',
-            style: GoogleFonts.jetBrainsMono(
-              color: TerminalColors.error,
-              fontSize: 12,
+            _tabError!,
+            style: TextStyle(
+              fontFamily: ChordLensTheme.fontFamily,
+              color: scheme.error,
+              fontSize: 13,
             ),
           ),
         ],
@@ -606,29 +520,13 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     );
   }
 
-  Widget _tuningBlock(BuildContext context, RainbowStyle r) {
+  Widget _tuningBlock(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final card = Theme.of(context).cardTheme.color ?? scheme.surface;
     final items = <DropdownMenuItem<String>>[
       for (final p in kTuningPresets)
-        DropdownMenuItem(
-          value: p.id,
-          child: Text(
-            p.label,
-            style: GoogleFonts.jetBrainsMono(
-              color: r.text,
-              fontSize: 12,
-            ),
-          ),
-        ),
-      DropdownMenuItem(
-        value: _customId,
-        child: Text(
-          r'[ Custom — per string ]',
-          style: GoogleFonts.jetBrainsMono(
-            color: r.text,
-            fontSize: 12,
-          ),
-        ),
-      ),
+        DropdownMenuItem(value: p.id, child: Text(p.label)),
+      const DropdownMenuItem(value: _customId, child: Text('Custom')),
     ];
 
     return Column(
@@ -637,87 +535,57 @@ class _ChordLensHomeState extends State<ChordLensHome> {
         GestureDetector(
           onHorizontalDragEnd: _onTuningRowHorizontalDragEnd,
           behavior: HitTestBehavior.opaque,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Text('> TUNING', style: r.sectionLabel()),
-                  if (_capoSemitones > 0) ...[
-                    const Spacer(),
-                    Text(
-                      '+$_capoSemitones',
-                      style: GoogleFonts.jetBrainsMono(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        color: r.textBright,
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 0),
-                decoration: BoxDecoration(
-                  color: r.blockBg,
-                  border: Border.all(
-                    color: r.border,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: card,
+              border: Border.all(color: scheme.outline),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _presetId,
+                  isExpanded: true,
+                  borderRadius: BorderRadius.circular(8),
+                  dropdownColor: card,
+                  style: TextStyle(
+                    fontFamily: ChordLensTheme.fontFamily,
+                    color: scheme.onSurface,
+                    fontSize: 16,
                   ),
-                  borderRadius: BorderRadius.zero,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _presetId,
-                    isExpanded: true,
-                    icon: Icon(
-                      Icons.arrow_drop_down,
-                      color: r.textBright,
-                    ),
-                    itemHeight: 48,
-                    dropdownColor: r.blockBg,
-                    style: GoogleFonts.jetBrainsMono(
-                      color: r.text,
-                      fontSize: 12,
-                    ),
-                    items: items,
-                    onChanged: (v) {
-                      if (v == null) return;
-                      setState(() {
-                        _presetId = v;
-                        if (v != _customId) {
-                          _applyPresetStrings(presetById(v)!.openStringMidis);
-                          _customTuningError = null;
-                        }
-                        _recompute();
-                      });
-                      unawaited(_saveTuningPrefs());
-                    },
-                  ),
+                  items: items,
+                  onChanged: (v) {
+                    if (v == null) return;
+                    setState(() {
+                      _presetId = v;
+                      if (v != _customId) {
+                        _applyPresetStrings(presetById(v)!.openStringMidis);
+                        _customTuningError = null;
+                      }
+                      _recompute();
+                    });
+                    unawaited(_saveTuningPrefs());
+                  },
                 ),
               ),
-            ],
+            ),
           ),
         ),
         if (_presetId == _customId) ...[
           const SizedBox(height: 10),
           Text(
-            r'// Open strings, low to high. E.g. E A D G B E',
-            style: GoogleFonts.jetBrainsMono(
-              fontSize: 10,
-              color: r.hint,
-            ),
+            'Open strings, low to high. Example: E A D G B E',
+            style: Theme.of(
+              context,
+            ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
           ),
           const SizedBox(height: 8),
           Row(
             children: List.generate(6, (i) {
               return Expanded(
                 child: Padding(
-                  padding: EdgeInsets.only(
-                    left: i == 0 ? 0 : 3,
-                    right: i == 5 ? 0 : 0,
-                  ),
+                  padding: EdgeInsets.only(left: i == 0 ? 0 : 6),
                   child: TextField(
                     controller: _customTuning[i],
                     onChanged: (_) {
@@ -725,20 +593,12 @@ class _ChordLensHomeState extends State<ChordLensHome> {
                       unawaited(_saveTuningPrefs());
                     },
                     textAlign: TextAlign.center,
-                    cursorColor: r.borderFocus,
-                    style: GoogleFonts.jetBrainsMono(
-                      fontSize: 12,
-                      color: r.textBright,
+                    style: TextStyle(
+                      fontFamily: ChordLensTheme.fontFamily,
+                      fontSize: 16,
+                      color: scheme.onSurface,
                     ),
-                    decoration: r.inputFieldDecoration().copyWith(
-                      labelText: 'S${i + 1}',
-                      labelStyle: GoogleFonts.jetBrainsMono(
-                        color: r.textBright,
-                        fontSize: 10,
-                      ),
-                      isDense: true,
-                      contentPadding: const EdgeInsets.symmetric(vertical: 6),
-                    ),
+                    decoration: InputDecoration(labelText: '${i + 1}'),
                   ),
                 ),
               );
@@ -747,10 +607,11 @@ class _ChordLensHomeState extends State<ChordLensHome> {
           if (_customTuningError != null) ...[
             const SizedBox(height: 6),
             Text(
-              '[ERR] $_customTuningError',
-              style: GoogleFonts.jetBrainsMono(
-                color: TerminalColors.error,
-                fontSize: 12,
+              _customTuningError!,
+              style: TextStyle(
+                fontFamily: ChordLensTheme.fontFamily,
+                color: scheme.error,
+                fontSize: 13,
               ),
             ),
           ],
@@ -758,10 +619,11 @@ class _ChordLensHomeState extends State<ChordLensHome> {
         if (_tuningError != null) ...[
           const SizedBox(height: 6),
           Text(
-            '[ERR] $_tuningError',
-            style: GoogleFonts.jetBrainsMono(
-              color: TerminalColors.error,
-              fontSize: 12,
+            _tuningError!,
+            style: TextStyle(
+              fontFamily: ChordLensTheme.fontFamily,
+              color: scheme.error,
+              fontSize: 13,
             ),
           ),
         ],
@@ -769,33 +631,19 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     );
   }
 
-  Widget _chordNameBlock(RainbowStyle r) {
+  Widget _chordNameBlock() {
+    final scheme = Theme.of(context).colorScheme;
+    final empty = Text(
+      '—',
+      style: Theme.of(
+        context,
+      ).textTheme.titleLarge?.copyWith(color: scheme.onSurfaceVariant),
+    );
     if (_tabError != null && _tabController.text.isNotEmpty) {
-      return Text(
-        '[ -- ]',
-        style: GoogleFonts.jetBrainsMono(
-          color: r.hint,
-          fontSize: 14,
-        ),
-      );
+      return empty;
     }
-    if (_notes.isEmpty) {
-      return Text(
-        '[ -- ]',
-        style: GoogleFonts.jetBrainsMono(
-          color: r.hint,
-          fontSize: 14,
-        ),
-      );
-    }
-    if (_interpretations.isEmpty) {
-      return Text(
-        '[ -- ]',
-        style: GoogleFonts.jetBrainsMono(
-          color: r.hint,
-          fontSize: 14,
-        ),
-      );
+    if (_notes.isEmpty || _interpretations.isEmpty) {
+      return empty;
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -803,46 +651,42 @@ class _ChordLensHomeState extends State<ChordLensHome> {
         final c = _interpretations[i];
         final isHead = i == 0;
         return Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            decoration: BoxDecoration(
-              color: r.blockBg,
-              border: Border.all(
-                color: isHead ? r.borderFocus : r.border,
-                width: isHead ? 1.2 : 0.8,
-              ),
-              borderRadius: BorderRadius.zero,
-            ),
-            child: Text(
-              isHead ? '>> ${c.displayName}' : '   ${c.displayName}',
-              style: GoogleFonts.jetBrainsMono(
-                fontSize: isHead ? 18 : 13,
-                fontWeight: isHead ? FontWeight.w600 : FontWeight.w400,
-                color: isHead ? r.textBright : r.text,
-                letterSpacing: 0.2,
-                height: 1.25,
-              ),
-            ),
+          padding: EdgeInsets.only(bottom: isHead ? 4 : 2),
+          child: Text(
+            c.displayName,
+            style: isHead
+                ? Theme.of(context).textTheme.headlineSmall?.copyWith(
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 0.4,
+                  )
+                : Theme.of(context).textTheme.titleMedium?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w400,
+                  ),
           ),
         );
       }),
     );
   }
 
-  Widget _chordSessionSlotsBar(RainbowStyle r) {
+  Widget _chordSessionSlotsBar() {
+    final scheme = Theme.of(context).colorScheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('> CHORD_SETS', style: r.sectionLabel()),
+        Text(
+          'Chord sets',
+          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.3,
+          ),
+        ),
         const SizedBox(height: 8),
         Row(
           children: [
             for (var i = 0; i < 4; i++) ...[
-              if (i > 0) const SizedBox(width: 6),
-              Expanded(
-                child: _chordSessionSlot(i, r),
-              ),
+              if (i > 0) const SizedBox(width: 8),
+              Expanded(child: _chordSessionSlot(i, scheme)),
             ],
           ],
         ),
@@ -850,43 +694,56 @@ class _ChordLensHomeState extends State<ChordLensHome> {
     );
   }
 
-  Widget _chordSessionSlot(int i, RainbowStyle r) {
+  Widget _chordSessionSlot(int i, ColorScheme scheme) {
     final selected = i == _activeSlot;
     final label = _chordLabelForSlot(i);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => _selectSlot(i),
-        borderRadius: BorderRadius.zero,
-        child: AspectRatio(
-          aspectRatio: 1,
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: r.blockBg,
-              border: Border.all(
-                color: selected ? r.borderFocus : r.border,
-                width: selected ? 1.6 : 0.9,
-              ),
-              borderRadius: BorderRadius.zero,
-            ),
-            child: label == null
-                ? const SizedBox.shrink()
-                : FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(
-                      label,
-                      textAlign: TextAlign.center,
-                      maxLines: 3,
-                      style: GoogleFonts.jetBrainsMono(
-                        color: r.textBright,
-                        fontSize: 13,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                        height: 1.1,
-                      ),
+    final border = selected ? scheme.onSurface : scheme.outlineVariant;
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: selected
+            ? [
+                BoxShadow(
+                  color: scheme.shadow.withValues(alpha: 0.26),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ]
+            : null,
+      ),
+      child: Material(
+        color: selected ? scheme.surface : scheme.surfaceContainerHighest,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(8),
+          side: BorderSide(color: border, width: selected ? 2.5 : 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => _selectSlot(i),
+          child: SizedBox(
+            height: 64,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+              child: Center(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    label ?? '${i + 1}',
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    style: TextStyle(
+                      fontFamily: ChordLensTheme.fontFamily,
+                      color: label == null
+                          ? scheme.onSurfaceVariant
+                          : scheme.onSurface,
+                      fontSize: 16,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      letterSpacing: 0.3,
                     ),
                   ),
+                ),
+              ),
+            ),
           ),
         ),
       ),

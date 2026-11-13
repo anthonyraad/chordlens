@@ -1,10 +1,9 @@
 // Minimal horizontal piano for chord visualization.
 
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 import 'chord_engine.dart';
-import 'rainbow_ui.dart';
+import 'theme.dart';
 
 bool _isBlackPc(int pc) {
   return const {1, 3, 6, 8, 10}.contains(pc % 12);
@@ -63,7 +62,6 @@ class PianoKeyboard extends StatefulWidget {
     required this.maxMidi,
     required this.chordMidis,
     this.rootPitchClass,
-    required this.accent,
     this.focusMidi,
   });
 
@@ -71,7 +69,6 @@ class PianoKeyboard extends StatefulWidget {
   final int maxMidi;
   final Set<int> chordMidis;
   final int? rootPitchClass;
-  final RainbowStyle accent;
 
   /// Low string = first in tab; scroll so this key is near the left (mobile).
   final int? focusMidi;
@@ -191,7 +188,6 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
             isBlack: true,
             chordMidis: widget.chordMidis,
             rootPitchClass: widget.rootPitchClass,
-            accent: widget.accent,
             name: _labelFor(m, widget.chordMidis),
             width: blackW,
             keyBodyHeight: keyH,
@@ -203,7 +199,7 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
     }
 
     return ClipRRect(
-      borderRadius: BorderRadius.zero,
+      borderRadius: BorderRadius.circular(8),
       child: SingleChildScrollView(
         controller: _scroll,
         scrollDirection: Axis.horizontal,
@@ -221,7 +217,6 @@ class _PianoKeyboardState extends State<PianoKeyboard> {
                       isBlack: false,
                       chordMidis: widget.chordMidis,
                       rootPitchClass: widget.rootPitchClass,
-                      accent: widget.accent,
                       name: _labelFor(m, widget.chordMidis),
                       width: whiteW,
                       keyBodyHeight: keyH,
@@ -252,7 +247,6 @@ class _PianoKey extends StatelessWidget {
     required this.isBlack,
     required this.chordMidis,
     this.rootPitchClass,
-    required this.accent,
     this.name,
     required this.width,
     required this.keyBodyHeight,
@@ -264,35 +258,32 @@ class _PianoKey extends StatelessWidget {
   final bool isBlack;
   final Set<int> chordMidis;
   final int? rootPitchClass;
-  final RainbowStyle accent;
   final String? name;
   final double width;
+
   /// White keys: full; black keys: full column height to align with whites.
   final double keyBodyHeight;
+
   /// Painted key only (shorter for black).
   final double keyCapHeight;
   final double labelHeight;
 
   @override
   Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
     final inChord = chordMidis.contains(midi);
     final pc = pitchClassFromMidi(midi);
     final isRoot =
         inChord && rootPitchClass != null && (pc == rootPitchClass! % 12);
 
-    // Same hue as PIANO row, darker when idle, brighter in chord
-    const idleW = Color(0xFF050508);
-    const idleB = Color(0xFF020202);
+    final idleWhite = Colors.white;
+    final idleBlack = const Color(0xFF1C1F26);
     final inFill = inChord
-        ? (isRoot
-            ? Color.lerp(accent.blockBg, accent.border, 0.35)!
-            : Color.lerp(accent.blockBg, accent.border, 0.2)!)
-        : (isBlack ? idleB : idleW);
+        ? (isRoot ? scheme.primary : scheme.primary.withValues(alpha: 0.55))
+        : (isBlack ? idleBlack : idleWhite);
     final edge = inChord
-        ? (isRoot ? accent.borderFocus : accent.textDim)
-        : (isBlack
-            ? const Color(0xFF3D3D48)
-            : const Color(0xFF1A1A1E));
+        ? scheme.primary
+        : (isBlack ? const Color(0xFF121418) : const Color(0xFF2A2F38));
     return SizedBox(
       width: width,
       height: keyBodyHeight + labelHeight,
@@ -319,9 +310,7 @@ class _PianoKey extends StatelessWidget {
                 ),
                 bottom: isBlack
                     ? BorderSide(
-                        color: inChord
-                            ? edge
-                            : const Color(0xFF151518),
+                        color: inChord ? edge : const Color(0xFF151518),
                         width: 0.9,
                       )
                     : BorderSide(
@@ -343,9 +332,10 @@ class _PianoKey extends StatelessWidget {
             Text(
               name!,
               textAlign: TextAlign.center,
-              style: GoogleFonts.jetBrainsMono(
-                color: isRoot ? accent.textBright : accent.text,
-                fontSize: 9,
+              style: TextStyle(
+                fontFamily: ChordLensTheme.fontFamily,
+                color: isRoot ? scheme.primary : scheme.onSurface,
+                fontSize: 11,
                 fontWeight: isRoot ? FontWeight.w600 : FontWeight.w400,
               ),
             )
